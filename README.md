@@ -1,5 +1,5 @@
 # YASP
-YASP (Yet Another Status Page) is a status page system using [Theater](https://github.com/lauevrar77/theater) (an actor system implemented in Go).
+YASP (Yet Another Status Page) is a status page system using [Theater](https://github.com/lauevrar77/go-theater) (an actor system implemented in Go).
 
 It is made as a module that is easilly pluggable in your existing actor system.
 
