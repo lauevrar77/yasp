@@ -58,7 +58,7 @@ func (w *Website) Initialize(me *theater.ActorRef, mailbox *theater.Mailbox, sys
 	w.mailbox = mailbox
 	w.system = system
 
-	notifier, err := system.ByRef("notifier")
+	notifier, err := system.ByRef("yasp.notifier")
 	if err != nil {
 		log.Println("Failed to find notifier")
 	}
@@ -78,7 +78,7 @@ func (w *Website) Run() {
 			}
 		default:
 			if w.lastCheckAt == nil || time.Since(*w.lastCheckAt) > time.Duration(w.CheckInterval)*time.Second {
-				requester, err := w.system.ByRef("requester")
+				requester, err := w.system.ByRef("yasp.requester")
 				if err != nil {
 					log.Println("Failed to find requester")
 				}
