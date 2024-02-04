@@ -32,10 +32,9 @@ type Website struct {
 	lastCheckAt *time.Time    `gorm:"-:all"`
 	lastState   *WebsiteState `gorm:"-:all"`
 
-	me       *theater.ActorRef    `gorm:"-:all"`
-	mailbox  *theater.Mailbox     `gorm:"-:all"`
-	system   *theater.ActorSystem `gorm:"-:all"`
-	notifier *theater.Mailbox     `gorm:"-:all"`
+	me         theater.ActorRef          `gorm:"-:all"`
+	dispatcher theater.MessageDispatcher `gorm:"-:all"`
+	system     *theater.ActorSystem      `gorm:"-:all"`
 
 	db *gorm.DB `gorm:"-:all"`
 }
@@ -53,47 +52,39 @@ func NewWebsite(url string, checkInterval uint, db *gorm.DB) Website {
 	return website
 }
 
-func (w *Website) Initialize(me *theater.ActorRef, mailbox *theater.Mailbox, system *theater.ActorSystem) {
-	w.me = me
-	w.mailbox = mailbox
-	w.system = system
+func (w *Website) Initialize(me theater.ActorRef, dispatcher theater.MessageDispatcher, system *theater.ActorSystem) {
+	dispatcher.RegisterMessageHandler("UpdateWebsiteState", w.updateState)
 
-	notifier, err := system.ByRef("yasp.notifier")
-	if err != nil {
-		log.Println("Failed to find notifier")
-	}
-	w.notifier = notifier
+	w.me = me
+	w.dispatcher = dispatcher
+	w.system = system
 }
 
 func (w *Website) Run() {
 	for {
-		select {
-		case msg := <-*w.mailbox:
-			switch msg.Type {
-			case "UpdateWebsiteState":
-				msg := msg.Content.(UpdateWebsiteState)
-				w.updateState(msg)
-			default:
-				log.Println("Unknown message type")
-			}
-		default:
-			if w.lastCheckAt == nil || time.Since(*w.lastCheckAt) > time.Duration(w.CheckInterval)*time.Second {
-				requester, err := w.system.ByRef("yasp.requester")
-				if err != nil {
-					log.Println("Failed to find requester")
-				}
-				log.Printf("Requesting check for website %s\n", w.URL)
-				*requester <- theater.Message{Type: "CheckWebsite", Content: CheckWebsite{URL: w.URL, RespondTo: w.me}}
-				now := time.Now()
-				w.lastCheckAt = &now
-			} else {
-				time.Sleep(1 * time.Second)
-			}
+		w.dispatcher.TryReceive()
+		if w.lastCheckAt == nil || time.Since(*w.lastCheckAt) > time.Duration(w.CheckInterval)*time.Second {
+			log.Printf("Requesting check for website %s\n", w.URL)
+			w.dispatcher.Send(
+				theater.ActorRef("yasp.requester"),
+				theater.Message{
+					Type: "CheckWebsite",
+					Content: CheckWebsite{
+						URL:       w.URL,
+						RespondTo: &w.me,
+					},
+				},
+			)
+			now := time.Now()
+			w.lastCheckAt = &now
+		} else {
+			time.Sleep(1 * time.Second)
 		}
 	}
 }
 
-func (w *Website) updateState(msg UpdateWebsiteState) {
+func (w *Website) updateState(content interface{}) {
+	msg := content.(UpdateWebsiteState)
 	log.Printf("Updating state for %s\n", w.URL)
 	var checkError *string
 	if msg.Error != nil {
@@ -132,7 +123,10 @@ func (w *Website) notify(state WebsiteState) {
 	if state.CheckError != nil {
 		message = fmt.Sprintf("%s, error: %s", message, *state.CheckError)
 	}
-	*w.notifier <- theater.Message{Type: "Notify", Content: message}
+	w.dispatcher.Send(
+		theater.ActorRef("yas.notifier"),
+		theater.Message{Type: "Notify", Content: message},
+	)
 }
 
 type UpdateWebsiteState struct {

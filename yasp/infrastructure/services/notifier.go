@@ -8,9 +8,9 @@ import (
 )
 
 type Notifier struct {
-	me      *theater.ActorRef
-	mailbox *theater.Mailbox
-	system  *theater.ActorSystem
+	me         theater.ActorRef
+	dispatcher theater.MessageDispatcher
+	system     *theater.ActorSystem
 
 	NotificationURL string
 }
@@ -19,23 +19,21 @@ func NewNotifier(notificationURL string) Notifier {
 	return Notifier{NotificationURL: notificationURL}
 }
 
-func (n *Notifier) Initialize(me *theater.ActorRef, mailbox *theater.Mailbox, system *theater.ActorSystem) {
+func (n *Notifier) Initialize(me theater.ActorRef, dispatcher theater.MessageDispatcher, system *theater.ActorSystem) {
+	n.dispatcher.RegisterDefaultHandler(n.notify)
+
 	n.me = me
-	n.mailbox = mailbox
+	n.dispatcher = dispatcher
 	n.system = system
 }
 
 func (n *Notifier) Run() {
-	for msg := range *n.mailbox {
-		if n.NotificationURL == "" {
-			continue
-		}
-
-		msg := msg.Content.(string)
-		n.notify(msg)
+	for {
+		n.dispatcher.Receive()
 	}
 }
 
-func (n *Notifier) notify(message string) {
+func (n *Notifier) notify(msg theater.Message) {
+	message := msg.Content.(string)
 	http.Post(n.NotificationURL, "text/plain", strings.NewReader(message))
 }
